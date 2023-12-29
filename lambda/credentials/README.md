@@ -1,7 +1,19 @@
 # credentials
 access credentials for APIs, data sources and other 3rd party secure resources
 
-# arguments
+## request 
+```
+{
+    "cred_requests": [
+        "cred_key1": { * request arguments *
+        },
+        "cred_key2": { ... },
+        ...
+    ]
+}
+```
+
+## credential request arguments
 
 __credential_group (required)__: [api, apps, aws, data_sources]
 

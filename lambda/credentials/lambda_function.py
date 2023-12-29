@@ -31,13 +31,15 @@ def lambda_handler(event, context):
         globals()[v] = os.environ[v]
         response_body['environment'][v] = os.environ[v]
 
-    request = {}
-    for p in PARAMETERS:
-        request[p] = event[p]
-
-    payload = credentials_get(**request)
-    response_body['request'] = request
-    response_body['payload'] = payload
+    if 'cred_requests' in event:
+        cred_requests = event['cred_requests']
+        response_body['request'] = cred_requests
+        payload = credentials_get(**cred_requests)
+        response_body['payload'] = payload
+    else:
+        response_body['payload'] = None
+        response_body['status'] = 'failed'
+        response_body['message'] = 'ERROR. missing required argument: cred_requests'
 
     print(f'lambda execution completed. results {response_body}')
 
@@ -47,7 +49,14 @@ def lambda_handler(event, context):
     }
 
 
-def credentials_get(
+def credentials_get(cred_requests):
+    credentials = {}
+    for k in cred_requests:
+        credentials[k] = credential_get(**cred_requests[k])
+    return credentials
+
+
+def credential_get(
         credential_group='',
         resource_name='',
         file_name='',

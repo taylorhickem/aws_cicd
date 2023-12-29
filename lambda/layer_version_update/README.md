@@ -9,3 +9,7 @@ S3 bucket location, and updates a new Lambda layer version with the new
 If the layer already exists, then a new version is created
 If the layer does not already exist, then a new layer is created.
 In both cases, the version tag is extracted from the name of the *.zip file.
+
+# ENVIRONMENT VARIABLES
+
+SOURCE_BUCKET: S3 bucket where the package *.zip file is located

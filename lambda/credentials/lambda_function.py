@@ -34,7 +34,7 @@ def lambda_handler(event, context):
     if 'cred_requests' in event:
         cred_requests = event['cred_requests']
         response_body['request'] = cred_requests
-        payload = credentials_get(**cred_requests)
+        payload = credentials_get(cred_requests)
         response_body['payload'] = payload
     else:
         response_body['payload'] = None

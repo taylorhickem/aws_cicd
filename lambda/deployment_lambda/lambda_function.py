@@ -1,5 +1,6 @@
 import os
 import io
+import shutil
 import zipfile
 import base64
 import boto3
@@ -26,8 +27,9 @@ S3_BUCKET = ''
 
 def lambda_handler(event, context):
     global response_body
-
+    response_body['request'] = {}
     response_body['environment'] = {}
+
     for v in ENV_VARIABLES:
         globals()[v] = os.environ[v]
         response_body['environment'][v] = os.environ[v]
@@ -85,20 +87,24 @@ def function_update(function_name):
 
 
 def source_code_zip_from_s3(function_name):
-    source_code_zip = None
     local_dir = f'{TMP_DIR}/{function_name}'
-    os.mkdir(local_dir)
+    if not os.path.exists(local_dir):
+        os.mkdir(local_dir)
+    function_dir = f'{S3_DIR}/{function_name}'
 
-    client_load['s3']
+    client_load('s3')
     objects = clients['s3'].list_objects_v2(
         Bucket=S3_BUCKET,
-        Prefix=S3_DIR
+        Prefix=function_dir
     )
-    for f in objects['Key']:
-        file_name = f.split('/')[-1]
-        local_path = f'{local_dir}/{file_name}'
-        clients['s3'].download_file(S3_BUCKET, f, local_path)
-    client_unload['s3']
+    print(objects['Contents'])
+    for obj in objects['Contents']:
+        f = obj['Key']
+        if f not in [f'{S3_DIR}/', f'{function_dir}/']:
+            file_name = f.split('/')[-1]
+            local_path = f'{local_dir}/{file_name}'
+            clients['s3'].download_file(S3_BUCKET, f, local_path)
+    client_unload('s3')
 
     #zip the files
     zip_bytes = io.BytesIO()
@@ -110,6 +116,7 @@ def source_code_zip_from_s3(function_name):
                     file_path,
                     os.path.relpath(file_path, local_dir)
                 )
-    source_code_zip = base64.b64encode(zip_bytes.getvalue()).decode(ENCODING)
-
+    source_code_zip = zip_bytes.getvalue()
+    #source_code_zip = base64.b64encode(zip_bytes.getvalue())
+    shutil.rmtree(TMP_DIR, ignore_errors=True)
     return source_code_zip

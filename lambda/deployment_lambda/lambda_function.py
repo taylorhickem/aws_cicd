@@ -1,66 +1,46 @@
 import os
+import io
 import zipfile
-import shutil
-import urllib
+import base64
 import boto3
 
 TMP_DIR = '/tmp'
+S3_DIR = 'lambda'
+ENCODING = 'utf-8'
 clients = {
     'lambda': None,
     's3': None
 }
 ENV_VARIABLES = [
-    'SOURCE_BUCKET'
+    'S3_BUCKET'
 ]
 response_body = {
-    'status': 'script executed without exception'
+    'status': 'success',
+    'message': 'updated lambda funciton code.'
 }
-RUNTIMES = [
-    'python3.9'
-]
 ARCHITECTURES = [
     'x86_64'
 ]
-ACTION_TYPE = 'layer_update'
-EVENT_BUCKET = ''
+S3_BUCKET = ''
 
 
 def lambda_handler(event, context):
-    global response_body, LAYER_NAME, ACTION_TYPE, EVENT_BUCKET
+    global response_body
 
     response_body['environment'] = {}
     for v in ENV_VARIABLES:
         globals()[v] = os.environ[v]
         response_body['environment'][v] = os.environ[v]
 
-    response_body['request'] = {}
-    bucket_context = read_bucket_context(event)
-    if bucket_context:
-        ACTION_TYPE = 'layer_update'
-        EVENT_BUCKET = bucket_context['event_bucket']
-        layer_name = bucket_context['layer_name']
-        version_tag = bucket_context['version_tag']
-        response_body['request']['event_bucket'] = EVENT_BUCKET
-        response_body['request']['layer_name'] = layer_name
-        response_body['request']['version_tag'] = version_tag
-    else:
-        for a in event:
+    for a in event:
+        if a in ENV_VARIABLES:
             globals()[a] = event[a]
             response_body['request'][a] = event[a]
 
-    response_body['ACTION_TYPE'] = ACTION_TYPE
-    if ACTION_TYPE == 'layer_update':
-        if version_tag:
-            package_key = f'{layer_name}-{version_tag}.zip'
-        else:
-            package_key = f'{layer_name}.zip'
-        print(f'publishing new lambda layer: {layer_name} version: {version_tag} ...')
-        layer_update(
-            EVENT_BUCKET,
-            package_key,
-            layer_name,
-            version_tag
-        )
+    bucket_context = read_bucket_context(event)
+    function_name = bucket_context['function_name']
+    response_body['request']['function_name'] = function_name
+    response_body['lambda_response'] = function_update(function_name)
 
     print(f'lambda execution completed. results {response_body}')
 
@@ -74,18 +54,9 @@ def read_bucket_context(event):
     bucket_context = {}
     if 'Records' in event:
         if 's3' in event['Records'][0]:
-            bucket_details = event['Records'][0]['s3']['bucket']
             object_details = event['Records'][0]['s3']['object']
-            bucket_context['event_bucket'] = bucket_details['name']
-            file_name = object_details['key']
-            if '-' in file_name:
-                layer_name, version_tag = file_name.split('-')
-                version_tag = version_tag.replace('.zip', '')
-            else:
-                layer_name = file_name.replace('.zip', '')
-                version_tag = ''
-            bucket_context['layer_name'] = layer_name
-            bucket_context['version_tag'] = version_tag
+            file_path = object_details['key']
+            bucket_context['function_name'] = file_path.split('/')[1]
     return bucket_context
 
 
@@ -100,21 +71,45 @@ def client_unload(service):
     clients[service] = None
 
 
-def download_file(url, local_path):
-    with urllib.request.urlopen(url) as response, open(local_path, 'wb') as out_file:
-        out_file.write(response.read())
+def function_update(function_name):
+    source_code_zip_bytes = source_code_zip_from_s3(function_name)
 
-
-def function_update(s3_bucket, source_code_key, layer_name, version_tag):
     client_load('lambda')
-    clients['lambda'].publish_layer_version(
-        LayerName=layer_name,
-        Description=version_tag,
-        Content={
-            'S3Bucket': s3_bucket,
-            'S3Key': package_key
-        },
-        CompatibleRuntimes=RUNTIMES,
-        CompatibleArchitectures=ARCHITECTURES
+    response = clients['lambda'].update_function_code(
+        FunctionName=function_name,
+        ZipFile=source_code_zip_bytes,
+        Architectures=ARCHITECTURES
     )
     client_unload('lambda')
+    return response
+
+
+def source_code_zip_from_s3(function_name):
+    source_code_zip = None
+    local_dir = f'{TMP_DIR}/{function_name}'
+    os.mkdir(local_dir)
+
+    client_load['s3']
+    objects = clients['s3'].list_objects_v2(
+        Bucket=S3_BUCKET,
+        Prefix=S3_DIR
+    )
+    for f in objects['Key']:
+        file_name = f.split('/')[-1]
+        local_path = f'{local_dir}/{file_name}'
+        clients['s3'].download_file(S3_BUCKET, f, local_path)
+    client_unload['s3']
+
+    #zip the files
+    zip_bytes = io.BytesIO()
+    with zipfile.ZipFile(zip_bytes, 'w') as zipf:
+        for root, _, files in os.walk(local_dir):
+            for f in files:
+                file_path = os.path.join(root, f)
+                zipf.write(
+                    file_path,
+                    os.path.relpath(file_path, local_dir)
+                )
+    source_code_zip = base64.b64encode(zip_bytes.getvalue()).decode(ENCODING)
+
+    return source_code_zip

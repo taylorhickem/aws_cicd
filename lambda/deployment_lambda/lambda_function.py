@@ -117,6 +117,6 @@ def source_code_zip_from_s3(function_name):
                     os.path.relpath(file_path, local_dir)
                 )
     source_code_zip = zip_bytes.getvalue()
-    #source_code_zip = base64.b64encode(zip_bytes.getvalue())
+
     shutil.rmtree(TMP_DIR, ignore_errors=True)
     return source_code_zip

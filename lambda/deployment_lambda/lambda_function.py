@@ -2,7 +2,6 @@ import os
 import io
 import shutil
 import zipfile
-import base64
 import boto3
 
 TMP_DIR = '/tmp'

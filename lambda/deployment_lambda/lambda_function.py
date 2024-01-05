@@ -7,25 +7,49 @@ import boto3
 TMP_DIR = '/tmp'
 S3_DIR = 'lambda'
 ENCODING = 'utf-8'
+CLIENTS_AVAILABLE = [
+    'cloudformation',
+    'lambda',
+    's3'
+]
 clients = {
+    'cloudformation': None,
     'lambda': None,
     's3': None
 }
+STATUS_LABELS = [
+    'FAILED',
+    'SUCCESS'
+]
 ENV_VARIABLES = [
     'S3_BUCKET'
 ]
-response_body = {
-    'status': 'success',
-    'message': 'updated lambda funciton code.'
-}
+EVENT_VARIABLES = [
+    'ACTION_TYPE',
+    'FUNCTION_NAME'
+]
 ARCHITECTURES = [
     'x86_64'
 ]
+STACK_CONFIG = {
+    'stack_name': '',
+    'template': '',
+    'parameters': {},
+    'rollback_actions': {}
+}
+STATUS_TYPE = 1
+response_body = {
+    'statusCode': 200,
+    'Status': STATUS_LABELS[STATUS_TYPE],
+    'message': ''
+}
+STACK_ALIVE_STATUS = 'CREATE_COMPLETE'
 S3_BUCKET = ''
-
+FUNCTION_NAME = ''
+ACTION_TYPE = 'function_update'
 
 def lambda_handler(event, context):
-    global response_body
+    global response_body, STATUS_TYPE
     response_body['request'] = {}
     response_body['environment'] = {}
 
@@ -34,21 +58,36 @@ def lambda_handler(event, context):
         response_body['environment'][v] = os.environ[v]
 
     for a in event:
-        if a in ENV_VARIABLES:
+        if a in EVENT_VARIABLES:
             globals()[a] = event[a]
             response_body['request'][a] = event[a]
 
-    bucket_context = read_bucket_context(event)
-    function_name = bucket_context['function_name']
-    response_body['request']['function_name'] = function_name
-    response_body['lambda_response'] = function_update(function_name)
+    if FUNCTION_NAME:
+        response_body['request']['function_name'] = FUNCTION_NAME
+        if ACTION_TYPE == 'function_update':
+            #bucket_context = read_bucket_context(event) used together with S3 trigger on bucket
+            #function_name = bucket_context['function_name']
+            try:
+                response_body['lambda_response'] = function_update(FUNCTION_NAME)
+                STATUS_TYPE = 1
+                message = f'updated lambda function code for {FUNCTION_NAME}.'
+            except Exception as e:
+                STATUS_TYPE = 0
+                message = f'ERROR. failed to update lambda funciton code {FUNCTION_NAME}. {str(e)}'
+        elif ACTION_TYPE == 'stack_update':
+            cfn_response, message, STATUS_TYPE = stack_update(FUNCTION_NAME)
+            response_body['cfn_response'] = cfn_response
+        else:
+            STATUS_TYPE = 0
+            message = f'USER INPUT ERROR. Unrecognized ACTION_TYPE {ACTION_TYPE}. Allowed = [function_update, stack_update]'
+    else:
+        STATUS_TYPE = 1
+        message = 'USER INPUT ERROR. No Lambda FUNCTION_NAME passed.'
 
+    response_body['Status'] = STATUS_LABELS[STATUS_TYPE]
+    response_body['message'] = message
     print(f'lambda execution completed. results {response_body}')
-
-    return {
-        'statusCode': 200,
-        'body': response_body
-    }
+    return response_body
 
 
 def read_bucket_context(event):
@@ -63,7 +102,7 @@ def read_bucket_context(event):
 
 def client_load(service):
     global clients
-    if service in ['lambda', 's3']:
+    if service in CLIENTS_AVAILABLE:
         clients[service] = boto3.client(service)
 
 
@@ -134,3 +173,39 @@ def source_code_zip_from_s3(function_name):
 
     shutil.rmtree(TMP_DIR, ignore_errors=True)
     return source_code_zip
+
+
+def stack_update(function_name):
+    status_type = 1
+    message = 'stack exists'
+    cfn_response = {}
+    read_stack_config(function_name)
+    stack_name = STACK_CONFIG['stack_name']
+    client_load('cloudformation')
+    stack_deployed = stack_exists(stack_name)
+    client_unload('cloudformation')
+    if not stack_deployed:
+        message = 'stack does not exists'
+    return cfn_response, message, status_type
+
+
+def read_stack_config(function_name):
+    global STACK_CONFIG
+    #client_load('s3')
+    STACK_CONFIG['stack_name'] = 'lambda-blockytime-events-update'
+    #client_unload('s3')
+
+
+def stack_exists(stack_name):
+    stack_alive = False
+    stack_summaries = clients['cloudformation'].list_stacks()['StackSummaries']
+    stack_count = len(stack_summaries)
+    if stack_count > 0:
+        i = 0
+        while i < stack_count and not stack_alive:
+            stack_summary = stack_summaries[i]
+            if stack_summary['StackName'] == stack_name:
+                stack_status = stack_summary['StackStatus']
+                stack_alive = stack_status == STACK_ALIVE_STATUS
+            i = i + 1
+    return stack_alive

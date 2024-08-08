@@ -6,22 +6,22 @@ from services import client_load, client_unload, clients
 
 
 TMP_DIR = '/tmp'
+CF_DIR = 'cloudformation'
 
-
-def download_from_s3(function_name, s3_bucket, s3_dir='', local_dir=''):
+def stack_download_from_s3(stack_name, s3_bucket, s3_dir='', local_dir='', print_updates=True):
     files = []
-    if not s3_dir:
-        s3_dir = 'lambda'
     if not local_dir:
-        local_dir = os.path.join(TMP_DIR, function_name)
-    remote_dir = f'{s3_dir}/{function_name}'
+        local_dir = os.path.join(os.path.join(TMP_DIR, CF_DIR), stack_name)
+    if s3_dir:
+        remote_dir = f'{s3_dir}/{CF_DIR}/{stack_name}'
+    else:
+        remote_dir = f'{CF_DIR}/{stack_name}'
     client_load('s3')
     response = clients['s3'].list_objects_v2(
         Bucket=s3_bucket,
         Prefix=remote_dir
     )
     contents = response['Contents']
-    #print(f'S3 source code contents for lambda function {function_name}: \n {contents}')
     if len(contents) > 0:
         for obj in contents:
             key = obj['Key']
@@ -29,7 +29,8 @@ def download_from_s3(function_name, s3_bucket, s3_dir='', local_dir=''):
                 files.append(key)
 
     file_count = len(files)
-    print(f'found {file_count} files.')
+    if print_updates:
+        print(f'found {file_count} files.')
     if file_count > 0:
         if not os.path.exists(local_dir):
             os.mkdir(local_dir)
@@ -40,21 +41,25 @@ def download_from_s3(function_name, s3_bucket, s3_dir='', local_dir=''):
             clients['s3'].download_file(s3_bucket, f, local_path)
     client_unload('s3')
 
-    print('source code files downloaded:')
+    if print_updates:
+        print('source code files downloaded:')
     for subdir, dirs, files in os.walk(local_dir):
         for file in files:
-            print(os.path.join(subdir, file))
+            if print_updates:
+                print(os.path.join(subdir, file))
 
 
-def zip_to_S3(function_name, local_dir, s3_bucket, s3_prefix=''):
+def lambda_function_zip_to_S3(function_name, local_dir, s3_bucket, s3_prefix='', print_updates=True):
     zip_key = f'{s3_prefix}/{function_name}.zip'
-    print(f'zipping source code to S3 bucket {s3_bucket} and key {zip_key} ...')
+    if print_updates:
+        print(f'zipping source code to S3 bucket {s3_bucket} and key {zip_key} ...')
     zipobj = zip_buffer(local_dir)
     zipobj.seek(0)
     client_load('s3')
     clients['s3'].upload_fileobj(zipobj, s3_bucket, zip_key)
     client_unload('s3')
-    print(f'source code zipped to {zip_key}.')
+    if print_updates:
+        print(f'source code zipped to {zip_key}.')
 
 
 def zip_buffer(local_dir):

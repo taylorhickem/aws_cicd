@@ -4,6 +4,8 @@ import json
 import re
 from services import client_load, client_unload, clients
 from layers import LayerManager
+from source_code import read_file
+
 
 TMP_DIR = '/tmp'
 CFN_DIR = 'cloudformation'
@@ -78,9 +80,10 @@ def read_stack_config(stack_name, local_dir='', print_updates=False):
     config_subdir = os.path.join(local_dir, CONFIG_DIR)
     STACK_CONFIG['template'] = read_file(CFN_TEMPLATE_FILE, file_type='text',
        dir=local_dir, default='', print_updates=print_updates)
-    STACK_CONFIG['tags'] = read_file(CFN_TAGS_FILE, file_type='dict',
+    STACK_CONFIG['tags'] = read_file(CFN_TAGS_FILE, file_type='json',
         dir=config_subdir, default={}, print_updates=print_updates)
-    lambda_functions = read_lambda_functions(config_subdir, print_updates=print_updates)
+    lambda_functions = read_lambda_functions(
+        local_dir=local_dir, config_dir=config_subdir, print_updates=print_updates)
     if lambda_functions:
         STACK_CONFIG['lambda_functions'] = lambda_functions
     parameters = read_stack_parameters(config_subdir, lambda_functions=lambda_functions, print_updates=print_updates)
@@ -91,14 +94,18 @@ def read_stack_config(stack_name, local_dir='', print_updates=False):
         STACK_CONFIG['rollback_actions'] = read_stack_rollback_actions(config_subdir, params=parameters)
 
 
-def read_lambda_functions(local_dir='', print_updates=False) -> dict:
+def read_lambda_functions(local_dir='', config_dir='', print_updates=False) -> dict:
     lambda_functions = []
-    function_tags = read_file(CFN_LAMBDA_FUNCTIONS_FILE, file_type='dict',
-        dir=local_dir, default={}, print_updates=print_updates)
+    function_tags = read_file(CFN_LAMBDA_FUNCTIONS_FILE, file_type='json',
+        dir=config_dir, default={}, print_updates=print_updates)
     if function_tags:
         for t, f in function_tags.items():
-            function_dir = os.path.join(os.path.join(local_dir, LAMBDA_SUBDIR), f)
-            layers = read_lambda_layers(function_dir, print_updates=print_updates)
+            f_dir_name = f.replace('-', '_')
+            function_config_dir = os.path.join(
+                os.path.join(
+                    os.path.join(local_dir, LAMBDA_SUBDIR), 
+                    f_dir_name), CONFIG_DIR)
+            layers = read_lambda_layers(function_config_dir, print_updates=print_updates)
             lambda_function = {
                 'param_name': t,
                 'function_name': f,
@@ -126,7 +133,7 @@ def read_lambda_layers(function_config_dir='', print_updates=False) -> dict:
 def read_stack_parameters(local_dir, lambda_functions=[], print_updates=False) -> dict:
     parameters = read_file(
         CFN_PARAMETERS_FILE,
-        file_type='dict', 
+        file_type='json', 
         dir=local_dir,
         default={}, 
         print_updates=print_updates
@@ -358,24 +365,5 @@ def parameters_substitute(source_str, params) -> str:
         source_str
     )
     return target_str
-
-
-def read_file(filename, file_type='text', dir='', default=None, print_updates=False):
-    contents = default
-    if os.path.exists(dir):
-        if print_updates:
-            print(f'checking for file {filename} in dir {dir} ...')        
-        dir_files = os.listdir(dir)
-        if filename in dir_files:
-            file_path = os.path.join(filename, dir)
-            with open(file_path, 'r') as f:
-                if file_type == 'text':
-                    contents = f.read()
-                elif file_type == 'json':
-                    contents = json.load(f)
-                f.close()
-                if print_updates:
-                    print(f'file contents: {contents}')
-    return contents
 
 

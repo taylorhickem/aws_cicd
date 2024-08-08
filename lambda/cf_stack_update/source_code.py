@@ -1,4 +1,5 @@
 import os
+import json
 import io
 import shutil
 import zipfile
@@ -31,9 +32,11 @@ def stack_download_from_s3(stack_name, s3_bucket, s3_dir='', local_dir='', print
     file_count = len(files)
     if print_updates:
         print(f'found {file_count} files.')
+        print(f'local_dir: {local_dir}')
+        print(f'remote_dir: {remote_dir}')
     if file_count > 0:
         if not os.path.exists(local_dir):
-            os.mkdir(local_dir)
+            os.makedirs(local_dir)
         for f in files:
             local_path = f.replace(remote_dir, local_dir, 1)
             if not os.path.exists(os.path.dirname(local_path)):
@@ -77,3 +80,22 @@ def zip_buffer(local_dir):
 
     shutil.rmtree(TMP_DIR, ignore_errors=True)
     return zipobj
+
+
+def read_file(filename, file_type='text', dir='', default=None, print_updates=False):
+    contents = default
+    if os.path.exists(dir):
+        if print_updates:
+            print(f'checking for file {filename} in dir {dir} ...')        
+        dir_files = os.listdir(dir)
+        if filename in dir_files:
+            file_path = os.path.join(dir, filename)
+            with open(file_path, 'r') as f:
+                if file_type == 'text':
+                    contents = f.read()
+                elif file_type == 'json':
+                    contents = json.load(f)
+                f.close()
+                if print_updates:
+                    print(f'file contents: {contents}')
+    return contents

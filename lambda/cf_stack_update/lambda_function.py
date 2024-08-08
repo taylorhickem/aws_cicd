@@ -1,8 +1,4 @@
 import os
-import time
-import json
-from services import client_load, client_unload, clients
-from layers import LayerManager
 import source_code
 import cloudformation as cfn
 
@@ -81,7 +77,7 @@ def stack_update(stack_name, dir='', print_updates=True):
     cfn.read_stack_config(stack_name, local_dir=dir, print_updates=print_updates)
     functions_config = cfn.STACK_CONFIG.get('lambda_functions', {})
     if functions_config:
-        function_names = list(functions_config.values())
+        function_names = [c['function_name'] for c in functions_config]
         if print_updates:
             print(f'pre stack update action: zip source code to S3 for lambda functions {function_names} ...')
         functions_subdir = os.path.join(dir, LAMBDA_SUBDIR)
@@ -97,6 +93,7 @@ def stack_update(stack_name, dir='', print_updates=True):
 def lambda_source_code_zip(function_names, functions_dir, 
         s3_bucket, deploy_prefix='', print_updates=True):    
     for f in function_names:
-        function_dir = os.path.join(functions_dir, f)
+        f_dir_name = f.replace('-','_')
+        function_dir = os.path.join(functions_dir, f_dir_name)
         source_code.lambda_function_zip_to_S3(f, function_dir, 
             s3_bucket, s3_prefix=deploy_prefix, print_updates=print_updates)

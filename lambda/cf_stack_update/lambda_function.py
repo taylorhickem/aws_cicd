@@ -59,11 +59,14 @@ def lambda_handler(event, context):
         if PRINT_UPDATES:
             print(f'downloading source code for {STACK_NAME} from S3 bucket {S3_BUCKET} and prefix {remote_dir} ...')
         source_code.stack_download_from_s3(STACK_NAME, S3_BUCKET, s3_dir=S3_DIR, local_dir=STACK_DIR)
-        if 'stack_update' in ACTION_TYPE == 'stack_update':
+        if ACTION_TYPE == 'stack_update':
             message, STATUS_TYPE = stack_update(STACK_NAME, dir=STACK_DIR, print_updates=PRINT_UPDATES)
+        else:
+            STATUS_TYPE = 0
+            message = f'INPUT ERROR. unrecognized ACTION_TYPE {ACTION_TYPE}. expected: stack_update'
     else:
         STATUS_TYPE = 0
-        message = 'USER INPUT ERROR. No CloudFormation STACK_NAME passed.'
+        message = 'INPUT ERROR. No CloudFormation STACK_NAME passed.'
 
     response_body['Status'] = STATUS_LABELS[STATUS_TYPE]
     response_body['message'] = message

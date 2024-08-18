@@ -251,7 +251,7 @@ def stack_rollback(stack_name, print_updates=True):
     stack_status = get_stack_status(stack_name)
     if not stack_status == STACK_DELETED_STATUS:
         message, status_code = stack_pre_rollback_run(stack_name)
-        if status_code == 200:
+        if status_code // 100 == 2:
             if print_updates:
                 print(f'{stack_name} pre-rollback actions complete. rolling back stack ...')
             response = clients['cloudformation'].delete_stack(StackName=stack_name)
@@ -295,24 +295,38 @@ def stack_pre_rollback_run(stack_name, print_updates=True):
                     if print_updates:
                         print(f'executing pre-rollback using lambda: {lambda_function} and request {request_body}')
                     client_load('lambda')
-                    lambda_response = clients['lambda'].invoke(
-                        FunctionName=lambda_function,
-                        Payload=request_body
-                    )
+                    try:
+                        lambda_response = clients['lambda'].invoke(
+                            FunctionName=lambda_function,
+                            Payload=request_body
+                        )
+                    except Exception as e:
+                        lambda_response = {
+                            'StatusCode': 400,
+                            'FunctionError': f'ERROR. failed to invoke lambda. {str(e)}'
+                        }                        
                     client_unload('lambda')
+                    if print_updates:
+                        print(f'pre-rollback lambda response: {lambda_response}')
                     status_code = lambda_response['StatusCode']
-                    if status_code != 200:
+                    if status_code // 100 != 2:
                         error_details = lambda_response['FunctionError'] if 'FunctionError' in lambda_response else ''
                         message = f'ERROR. {stack_name} pre-rollback action failed. {error_details}'
-                    else:
-                        print(message)
 
         return message, status_code
     if print_updates:
         print(f'running pre-rollback back actions for stack {stack_name} ...')
     rollback_actions = STACK_CONFIG['rollback_actions']
+    message = ''
+    status_code = 200
     for a in rollback_actions:
-        message, status_code = action_run(a)
+        action_message, action_status = action_run(a)
+        if message:
+            message = f'{message} \n {action_message}'
+        else:
+            message = action_message
+        if status_code // 100 == 2:
+            status_code = action_status
     return message, status_code
 
 

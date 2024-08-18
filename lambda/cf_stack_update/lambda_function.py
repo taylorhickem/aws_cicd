@@ -44,8 +44,9 @@ def lambda_handler(event, context):
     response_body['environment'] = {}
 
     for v in ENV_VARIABLES:
-        globals()[v] = os.environ[v]
-        response_body['environment'][v] = os.environ[v]
+        if v in os.environ:
+            globals()[v] = os.environ[v]
+            response_body['environment'][v] = os.environ[v]
 
     for a in event:
         if a in EVENT_VARIABLES:

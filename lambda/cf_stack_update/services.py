@@ -2,11 +2,13 @@ import boto3
 
 CLIENTS_AVAILABLE = [
     'cloudformation',
+    'lambda',
     's3',
     'sts'
 ]
 clients = {
     'cloudformation': None,
+    'lambda': None,
     's3': None,
     'sts': None
 }
